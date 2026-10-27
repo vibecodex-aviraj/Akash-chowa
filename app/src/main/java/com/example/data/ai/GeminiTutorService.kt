@@ -9,9 +9,12 @@ import com.example.util.ImageUtil
 import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.Content
+import com.google.firebase.ai.type.GenerationConfig
 import com.google.firebase.ai.type.ImagePart
 import com.google.firebase.ai.type.Part
 import com.google.firebase.ai.type.TextPart
+import com.google.firebase.ai.type.ThinkingConfig
+import com.google.firebase.ai.type.ThinkingLevel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withTimeout
@@ -21,9 +24,21 @@ private const val TAG = "GeminiTutorService"
 class GeminiTutorService(private val context: Context) {
 
     private val model by lazy {
+        val thinkingConfig = ThinkingConfig.Builder().apply {
+            setThinkingLevel(ThinkingLevel.HIGH)
+            setIncludeThoughts(false)
+        }.build()
+
+        val generationConfig = GenerationConfig.Builder().apply {
+            setThinkingConfig(thinkingConfig)
+            setMaxOutputTokens(8192) // Unlimited answers without premature truncation
+            setTemperature(0.6f)
+        }.build()
+
         Firebase.ai.generativeModel(
             modelName = "gemini-3.8-flash",
-            systemInstruction = Content("system", listOf(TextPart(TutorPrompts.SYSTEM_INSTRUCTION)))
+            systemInstruction = Content("system", listOf(TextPart(TutorPrompts.SYSTEM_INSTRUCTION))),
+            generationConfig = generationConfig
         )
     }
 

@@ -11,6 +11,7 @@ import com.example.data.model.ChatMessage
 import com.example.data.model.SyllabusItem
 import com.example.data.repository.BengaliKnowledgeBase
 import com.example.data.repository.ChatRepository
+import com.example.util.MonthlyTokenManager
 import com.example.util.SpeechToTextManager
 import com.example.util.TextToSpeechManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,23 +32,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: ChatRepository
     val speechToText: SpeechToTextManager
     val textToSpeech: TextToSpeechManager
+    val tokenManager: MonthlyTokenManager
 
-    init {
-        val database = AkashDatabase.getInstance(application)
-        val tutorService = GeminiTutorService(application)
-        repository = ChatRepository(database.chatDao(), tutorService)
-        speechToText = SpeechToTextManager(application)
-        textToSpeech = TextToSpeechManager(application)
-
-        // Observe persisted messages from Room
-        viewModelScope.launch {
-            repository.getMessagesFlow().collectLatest { savedMessages ->
-                _persistedMessages.value = savedMessages
-            }
-        }
-    }
+    val remainingTokens: StateFlow<Int>
+    val nextRenewalDate: StateFlow<String>
 
     private val _persistedMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val persistedMessages: StateFlow<List<ChatMessage>> = _persistedMessages.asStateFlow()
 
     // Active in-progress streaming message
     private val _streamingMessage = MutableStateFlow<ChatMessage?>(null)
@@ -68,10 +59,34 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedTab = MutableStateFlow(AppTab.CHAT)
     val selectedTab: StateFlow<AppTab> = _selectedTab.asStateFlow()
 
+    // Search query for revisiting past tutor interactions
+    private val _historySearchQuery = MutableStateFlow("")
+    val historySearchQuery: StateFlow<String> = _historySearchQuery.asStateFlow()
+
+    private val _historySearchResults = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val historySearchResults: StateFlow<List<ChatMessage>> = _historySearchResults.asStateFlow()
+
     val quickPrompts = BengaliKnowledgeBase.getQuickPrompts()
     val syllabusItems = BengaliKnowledgeBase.syllabusItems
 
     init {
+        val database = AkashDatabase.getInstance(application)
+        val tutorService = GeminiTutorService(application)
+        repository = ChatRepository(database.chatDao(), tutorService)
+        speechToText = SpeechToTextManager(application)
+        textToSpeech = TextToSpeechManager(application)
+        tokenManager = MonthlyTokenManager(application)
+
+        remainingTokens = tokenManager.remainingTokens
+        nextRenewalDate = tokenManager.nextRenewalDate
+
+        // Observe persisted messages from Room
+        viewModelScope.launch {
+            repository.getMessagesFlow().collectLatest { savedMessages ->
+                _persistedMessages.value = savedMessages
+            }
+        }
+
         // Sync combined messages list whenever persisted messages or streaming message updates
         viewModelScope.launch {
             _persistedMessages.collectLatest { list ->
@@ -132,7 +147,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _isGenerating.value = true
 
         viewModelScope.launch {
-            // Save user message in DB
+            // Save user message in Room DB
             repository.saveMessage(
                 isUser = true,
                 text = displayText,
@@ -160,7 +175,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
-                // Streaming finished, persist complete message
+                // Streaming finished, persist complete message to Room
                 val finalText = accumulatedResponse.toString().ifBlank {
                     "উত্তর তৈরি করতে পারিনি, অনুগ্রহ করে পুনরায় চেষ্টা করুন।"
                 }
@@ -168,6 +183,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     isUser = false,
                     text = finalText
                 )
+
+                // Record token usage for the monthly 8000 free token pool
+                tokenManager.recordTokenUsage(displayText, finalText)
             } catch (e: Exception) {
                 repository.saveMessage(
                     isUser = false,
@@ -191,6 +209,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteMessage(id: Long) {
+        viewModelScope.launch {
+            repository.deleteMessage(id)
+        }
+    }
+
+    fun searchPastInteractions(query: String) {
+        _historySearchQuery.value = query
+        if (query.isBlank()) {
+            _historySearchResults.value = emptyList()
+            return
+        }
+        viewModelScope.launch {
+            repository.searchMessages(query).collectLatest { results ->
+                _historySearchResults.value = results
+            }
+        }
+    }
+
     fun toggleVoiceRecognition() {
         if (speechToText.isListening.value) {
             speechToText.stopListening()
@@ -209,6 +246,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun stopSpeaking() {
         textToSpeech.stop()
+    }
+
+    fun refreshFreeTokens() {
+        tokenManager.renewFreeTokensNow()
     }
 
     override fun onCleared() {

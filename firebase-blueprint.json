@@ -1,0 +1,17 @@
+{
+  "entities": {
+    "UserProfile": {
+      "collection": "users",
+      "path": "users/{userId}",
+      "fields": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "classGrade": { "type": "string" },
+        "board": { "type": "string" },
+        "updatedAt": { "type": "number" }
+      }
+    }
+  }
+}

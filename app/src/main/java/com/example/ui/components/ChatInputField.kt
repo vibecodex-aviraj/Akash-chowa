@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,6 +14,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,16 +25,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -77,6 +80,7 @@ fun ChatInputField(
 ) {
     val context = LocalContext.current
     var showAttachmentMenu by remember { mutableStateOf(false) }
+    var showVoiceModal by remember { mutableStateOf(false) }
 
     // Camera capture temporary URI
     var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
@@ -87,6 +91,7 @@ fun ChatInputField(
     ) { success ->
         if (success && tempCameraUri != null) {
             onAddAttachment(tempCameraUri!!, "ক্যামেরা ছবি")
+            Toast.makeText(context, "ছবি সংযুক্ত হয়েছে!", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -98,6 +103,8 @@ fun ChatInputField(
             val uri = ImageUtil.createTempImageUri(context)
             tempCameraUri = uri
             cameraLauncher.launch(uri)
+        } else {
+            Toast.makeText(context, "ক্যামেরা অনুমতি প্রয়োজন", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -106,16 +113,26 @@ fun ChatInputField(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            onToggleVoice()
+            showVoiceModal = true
+            speechToTextManager.startListening { transcript ->
+                if (transcript.isNotBlank()) {
+                    onInputTextChanged(if (inputText.isBlank()) transcript else "$inputText $transcript")
+                }
+            }
+        } else {
+            Toast.makeText(context, "ভয়েস রেকর্ডিং অনুমতি প্রয়োজন", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // Photo Picker Launcher (zero permission Android Photo Picker - allows multiple photos!)
+    // Photo Picker Launcher (multi-image)
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
         uris.forEach { uri ->
             onAddAttachment(uri, "ছবি")
+        }
+        if (uris.isNotEmpty()) {
+            Toast.makeText(context, "${uris.size}টি ছবি সংযুক্ত হয়েছে", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -129,7 +146,6 @@ fun ChatInputField(
     }
 
     val isListening by speechToTextManager.isListening.collectAsState()
-    val speechError by speechToTextManager.error.collectAsState()
 
     // Pulse animation for recording microphone
     val infiniteTransition = rememberInfiniteTransition(label = "micPulse")
@@ -149,58 +165,114 @@ fun ChatInputField(
     )
 
     Column(modifier = modifier.fillMaxWidth()) {
-        // Listening status indicator
-        if (isListening) {
-            Surface(
-                color = MaterialTheme.colorScheme.errorContainer,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 2.dp),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .background(MaterialTheme.colorScheme.error, CircleShape)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "বাংলায় শুনছি... কথা বলুন (মাইক্রোফোনে ট্যাপ করে বন্ধ করুন)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-        }
-
+        // Feature Quick Action Strip (Camera, Attachments, Voice)
         Surface(
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 3.dp,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Feature 1: Camera button pill
+                AssistChip(
+                    onClick = {
+                        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                    },
+                    label = { Text("📸 ক্যামেরা (ছবি তুলুন)") },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        labelColor = MaterialTheme.colorScheme.primary
+                    ),
+                    border = AssistChipDefaults.assistChipBorder(
+                        enabled = true,
+                        borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                    ),
+                    modifier = Modifier.testTag("quick_action_camera")
+                )
+
+                // Feature 2: Attachments button pill
+                AssistChip(
+                    onClick = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    label = { Text("📎 ছবি / ফাইল যোগ") },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        labelColor = MaterialTheme.colorScheme.secondary
+                    ),
+                    border = AssistChipDefaults.assistChipBorder(
+                        enabled = true,
+                        borderColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f)
+                    ),
+                    modifier = Modifier.testTag("quick_action_attach")
+                )
+
+                // Feature 3: Voice question button pill
+                AssistChip(
+                    onClick = {
+                        audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                    },
+                    label = { Text("🎙️ মুখে বলুন (ভয়েস)") },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        labelColor = MaterialTheme.colorScheme.tertiary
+                    ),
+                    border = AssistChipDefaults.assistChipBorder(
+                        enabled = true,
+                        borderColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f)
+                    ),
+                    modifier = Modifier.testTag("quick_action_voice")
+                )
+            }
+        }
+
+        // Main Input Row
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 4.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 6.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.Bottom
             ) {
-                // Attachment Button (+)
+                // 1. Direct Camera Button (📸)
+                IconButton(
+                    onClick = {
+                        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                    },
+                    modifier = Modifier
+                        .size(42.dp)
+                        .testTag("direct_camera_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CameraAlt,
+                        contentDescription = "ক্যামেরা দিয়ে ছবি তুলুন",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                // 2. Direct Attachments Button (📎)
                 Box {
                     IconButton(
                         onClick = { showAttachmentMenu = true },
                         modifier = Modifier
-                            .size(44.dp)
-                            .testTag("attachment_menu_button")
+                            .size(42.dp)
+                            .testTag("direct_attachment_button")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "ছবি বা ফাইল যুক্ত করুন",
-                            tint = MaterialTheme.colorScheme.primary,
+                            imageVector = Icons.Default.AttachFile,
+                            contentDescription = "ছবি বা ফাইল সংযুক্ত করুন",
+                            tint = MaterialTheme.colorScheme.secondary,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -209,20 +281,6 @@ fun ChatInputField(
                         expanded = showAttachmentMenu,
                         onDismissRequest = { showAttachmentMenu = false }
                     ) {
-                        // Camera option
-                        DropdownMenuItem(
-                            text = { Text("📸 ক্যামেরা দিয়ে ছবি তুলুন") },
-                            onClick = {
-                                showAttachmentMenu = false
-                                cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.CameraAlt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            },
-                            modifier = Modifier.testTag("menu_camera_option")
-                        )
-
-                        // Gallery / Photos option
                         DropdownMenuItem(
                             text = { Text("🖼️ গ্যালারি থেকে ছবি (একাধিক)") },
                             onClick = {
@@ -232,12 +290,11 @@ fun ChatInputField(
                                 )
                             },
                             leadingIcon = {
-                                Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                                Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             },
-                            modifier = Modifier.testTag("menu_gallery_option")
+                            modifier = Modifier.testTag("menu_gallery_photos")
                         )
 
-                        // PDF / Documents option
                         DropdownMenuItem(
                             text = { Text("📄 নথি বা PDF ফাইল") },
                             onClick = {
@@ -245,14 +302,14 @@ fun ChatInputField(
                                 documentPickerLauncher.launch(arrayOf("application/pdf", "image/*", "text/*"))
                             },
                             leadingIcon = {
-                                Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                                Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
                             },
-                            modifier = Modifier.testTag("menu_pdf_option")
+                            modifier = Modifier.testTag("menu_pdf_documents")
                         )
                     }
                 }
 
-                // Text Field
+                // 3. Text Field
                 OutlinedTextField(
                     value = inputText,
                     onValueChange = onInputTextChanged,
@@ -281,17 +338,17 @@ fun ChatInputField(
                     )
                 )
 
-                // Voice Recording Button
+                // 4. Direct Voice Button (🎙️)
                 IconButton(
                     onClick = {
                         audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
                     },
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(42.dp)
                         .scale(micScale)
                         .clip(CircleShape)
                         .background(micBgColor)
-                        .testTag("voice_record_button")
+                        .testTag("direct_voice_button")
                 ) {
                     Icon(
                         imageVector = if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
@@ -303,7 +360,7 @@ fun ChatInputField(
 
                 Spacer(modifier = Modifier.width(4.dp))
 
-                // Send Button
+                // 5. Send Button
                 val canSend = (inputText.isNotBlank() || hasAttachments) && !isGenerating
                 IconButton(
                     onClick = onSendMessage,
@@ -313,7 +370,7 @@ fun ChatInputField(
                         contentColor = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                     ),
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(42.dp)
                         .clip(CircleShape)
                         .testTag("send_message_button")
                 ) {
@@ -325,5 +382,19 @@ fun ChatInputField(
                 }
             }
         }
+    }
+
+    // Interactive Voice Modal Bottom Sheet
+    if (showVoiceModal) {
+        VoiceModalBottomSheet(
+            speechToTextManager = speechToTextManager,
+            onSendTranscript = { transcript ->
+                onInputTextChanged(transcript)
+                onSendMessage()
+            },
+            onDismiss = {
+                showVoiceModal = false
+            }
+        )
     }
 }

@@ -31,12 +31,9 @@ class SpeechToTextManager(private val context: Context) {
     }
 
     fun startListening(onResult: (String) -> Unit) {
-        if (!isAvailable()) {
-            _error.value = "আপনার ডিভাইসে ভয়েস রিকগনিশন সেবা সক্রিয় নয়।"
-            return
-        }
-
         stopListening()
+        _error.value = null
+        _spokenText.value = ""
 
         try {
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
@@ -59,10 +56,12 @@ class SpeechToTextManager(private val context: Context) {
                     override fun onError(errorCode: Int) {
                         _isListening.value = false
                         val errorMsg = when (errorCode) {
-                            SpeechRecognizer.ERROR_NO_MATCH -> "কোনো কথা শোনা যায়নি, আবার বলুন।"
-                            SpeechRecognizer.ERROR_NETWORK -> "নেটওয়ার্ক সংযোগ চেক করুন।"
-                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "সময় অতিক্রান্ত হয়েছে।"
-                            else -> "ভয়েস শুনতে সমস্যা হয়েছে ($errorCode)"
+                            SpeechRecognizer.ERROR_NO_MATCH -> "কোনো কথা শোনা যায়নি, স্পষ্ট করে পুনরায় বলুন।"
+                            SpeechRecognizer.ERROR_NETWORK -> "নেটওয়ার্ক সংযোগ পরীক্ষা করুন।"
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "সময় অতিক্রান্ত হয়েছে, পুনরায় চেষ্টা করুন।"
+                            SpeechRecognizer.ERROR_AUDIO -> "মাইক্রোফোন অডিও রেকর্ডিংয়ে সমস্যা হয়েছে।"
+                            SpeechRecognizer.ERROR_CLIENT -> "ভয়েস সেবা চালু করতে সমস্যা হয়েছে।"
+                            else -> "ভয়েস শনাক্তকরণে সমস্যা ($errorCode)"
                         }
                         Log.w(tag, "Speech error: $errorCode -> $errorMsg")
                         _error.value = errorMsg
@@ -95,10 +94,11 @@ class SpeechToTextManager(private val context: Context) {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "bn-IN")
                 putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("bn-BD", "en-IN"))
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_PROMPT, "বাংলায় প্রশ্ন বলুন...")
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "বাংলায় আপনার প্রশ্ন বলুন...")
             }
 
             speechRecognizer?.startListening(intent)
+            _isListening.value = true
         } catch (e: Exception) {
             _isListening.value = false
             _error.value = e.localizedMessage

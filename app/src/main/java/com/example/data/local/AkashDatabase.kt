@@ -5,9 +5,18 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [ChatMessageEntity::class], version = 1, exportSchema = false)
+@Database(
+    entities = [
+        ChatMessageEntity::class,
+        ChapterProgressEntity::class,
+        QuizResultEntity::class
+    ],
+    version = 2,
+    exportSchema = false
+)
 abstract class AkashDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
+    abstract fun dashboardDao(): DashboardDao
 
     companion object {
         @Volatile
@@ -19,7 +28,9 @@ abstract class AkashDatabase : RoomDatabase() {
                     context.applicationContext,
                     AkashDatabase::class.java,
                     "akash_chowa.db"
-                ).build()
+                )
+                .fallbackToDestructiveMigration()
+                .build()
                 INSTANCE = instance
                 instance
             }

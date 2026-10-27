@@ -11,6 +11,12 @@ interface ChatDao {
     @Query("SELECT * FROM chat_messages ORDER BY timestamp ASC")
     fun getAllMessages(): Flow<List<ChatMessageEntity>>
 
+    @Query("SELECT * FROM chat_messages WHERE text LIKE '%' || :query || '%' ORDER BY timestamp DESC")
+    fun searchMessages(query: String): Flow<List<ChatMessageEntity>>
+
+    @Query("SELECT COUNT(*) FROM chat_messages")
+    fun getMessageCount(): Flow<Int>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: ChatMessageEntity): Long
 

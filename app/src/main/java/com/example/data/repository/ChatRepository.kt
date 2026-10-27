@@ -15,19 +15,17 @@ class ChatRepository(
 
     fun getMessagesFlow(): Flow<List<ChatMessage>> {
         return chatDao.getAllMessages().map { entities ->
-            entities.map { entity ->
-                ChatMessage(
-                    id = entity.id,
-                    isUser = entity.isUser,
-                    text = entity.text,
-                    imageUris = if (entity.imageUrisJoined.isBlank()) emptyList() else {
-                        entity.imageUrisJoined.split(",").filter { it.isNotBlank() }.map { Uri.parse(it) }
-                    },
-                    timestamp = entity.timestamp
-                )
-            }
+            entities.map { it.toChatMessage() }
         }
     }
+
+    fun searchMessages(query: String): Flow<List<ChatMessage>> {
+        return chatDao.searchMessages(query).map { entities ->
+            entities.map { it.toChatMessage() }
+        }
+    }
+
+    fun getMessageCount(): Flow<Int> = chatDao.getMessageCount()
 
     suspend fun saveMessage(isUser: Boolean, text: String, imageUris: List<Uri> = emptyList()): Long {
         val joinedUris = imageUris.joinToString(",") { it.toString() }
@@ -40,11 +38,27 @@ class ChatRepository(
         return chatDao.insertMessage(entity)
     }
 
+    suspend fun deleteMessage(id: Long) {
+        chatDao.deleteMessage(id)
+    }
+
     suspend fun clearHistory() {
         chatDao.clearAll()
     }
 
     fun streamAiResponse(prompt: String, imageUris: List<Uri>): Flow<String> {
         return tutorService.generateTutorResponseStream(prompt, imageUris)
+    }
+
+    private fun ChatMessageEntity.toChatMessage(): ChatMessage {
+        return ChatMessage(
+            id = this.id,
+            isUser = this.isUser,
+            text = this.text,
+            imageUris = if (this.imageUrisJoined.isBlank()) emptyList() else {
+                this.imageUrisJoined.split(",").filter { it.isNotBlank() }.map { Uri.parse(it) }
+            },
+            timestamp = this.timestamp
+        )
     }
 }
