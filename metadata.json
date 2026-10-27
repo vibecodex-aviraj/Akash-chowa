@@ -1,0 +1,6 @@
+{
+  "name": "Akash Chowa",
+  "description": "Class 9 Bengali AI tutor covering Sahitya Sanchayan and Aam Aantir Bhepu with chat, camera homework solver, voice, and grammar guides",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
